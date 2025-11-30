@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Session {
+  id          String    @id @default(uuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  status      String    @default("active") // active, completed, cancelled
+  finalScore  Float?
+  
+  questions   Question[]
+  
+  @@index([createdAt])
+}
+
+model Question {
+  id              String    @id @default(uuid())
+  sessionId       String
+  questionNumber  Int
+  questionText    String
+  category        String    // geçmiş_ilişkiler, son_aktiviteler, duygusal_tepkiler, açık_uçlu
+  createdAt       DateTime  @default(now())
+  
+  session         Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  answers         Answer[]
+  
+  @@index([sessionId])
+  @@index([questionNumber])
+}
+
+model Answer {
+  id                String    @id @default(uuid())
+  questionId        String
+  answerText        String?   // STT'den gelen metin
+  transcript        String?   // Ham transkript
+  confidence        Float?    // STT güven skoru
+  
+  // Metrikler
+  faceScore         Float?    // 0-10 arası yüz analizi skoru
+  voiceScore        Float?    // 0-10 arası ses analizi skoru
+  nlpScore          Float?    // 0-10 arası NLP skoru
+  reactionDelay     Float?    // Saniye cinsinden gecikme
+  
+  // Timestamps
+  questionStartTime  DateTime?
+  answerStartTime   DateTime?
+  answerEndTime     DateTime?
+  
+  createdAt         DateTime  @default(now())
+  
+  question          Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  @@index([questionId])
+  @@index([createdAt])
+}

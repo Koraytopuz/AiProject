@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
+import prisma from './db';
 
 const app = express();
 app.use(cors());
@@ -37,14 +38,75 @@ app.get('/health', (_, res) => {
   res.json({ status: 'ok' });
 });
 
-app.post('/stt', (req, res) => {
-  const { mockAudioRef } = req.body ?? {};
+// STT endpoint - Audio dosyası veya base64 audio kabul eder
+app.post('/stt', async (req, res) => {
+  try {
+    const { audioData, audioFormat, sessionId, questionId } = req.body ?? {};
 
-  res.json({
-    transcript: 'STT placeholder: Whisper integration pending',
-    confidence: 0.0,
-    receivedRef: mockAudioRef ?? null,
-  });
+    // TODO: Whisper API entegrasyonu buraya gelecek
+    // Şimdilik mock response
+    const mockTranscript = 'STT placeholder: Whisper integration pending';
+    const mockConfidence = 0.85;
+
+    // Eğer questionId varsa, answer kaydını güncelle
+    if (questionId) {
+      await prisma.answer.update({
+        where: { id: questionId },
+        data: {
+          transcript: mockTranscript,
+          confidence: mockConfidence,
+          answerText: mockTranscript,
+        },
+      });
+    }
+
+    res.json({
+      transcript: mockTranscript,
+      confidence: mockConfidence,
+      sessionId: sessionId ?? null,
+      questionId: questionId ?? null,
+    });
+  } catch (error) {
+    console.error('STT error:', error);
+    res.status(500).json({ error: 'STT işlemi başarısız' });
+  }
+});
+
+// Yeni session oluştur
+app.post('/sessions', async (req, res) => {
+  try {
+    const session = await prisma.session.create({
+      data: {
+        status: 'active',
+      },
+    });
+    res.json(session);
+  } catch (error) {
+    console.error('Session creation error:', error);
+    res.status(500).json({ error: 'Session oluşturulamadı' });
+  }
+});
+
+// Session'a soru ekle
+app.post('/sessions/:sessionId/questions', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { questionText, category, questionNumber } = req.body;
+
+    const question = await prisma.question.create({
+      data: {
+        sessionId,
+        questionText,
+        category: category || 'açık_uçlu',
+        questionNumber: questionNumber || 1,
+      },
+    });
+
+    res.json(question);
+  } catch (error) {
+    console.error('Question creation error:', error);
+    res.status(500).json({ error: 'Soru oluşturulamadı' });
+  }
 });
 
 const PORT = Number(process.env.PORT ?? 4000);
