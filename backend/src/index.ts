@@ -20,13 +20,67 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log(`socket connected: ${socket.id}`);
 
-  socket.on('metrics', (payload) => {
+  socket.on('metrics', async (payload) => {
     console.log('incoming metrics payload', payload);
-    socket.emit('metrics:ack', {
-      ok: true,
-      questionId: payload?.questionId ?? null,
-      receivedAt: new Date().toISOString(),
-    });
+    try {
+      const { questionId, faceMetrics, voiceMetrics, timestamps } = payload ?? {};
+
+      if (questionId) {
+        // Soru yoksa basit bir placeholder oluştur (prototip amaçlı)
+        const existingQuestion = await prisma.question.findUnique({
+          where: { id: questionId },
+        });
+
+        if (!existingQuestion) {
+          await prisma.question.create({
+            data: {
+              id: questionId,
+              sessionId: payload?.sessionId ?? `session-${Date.now()}`,
+              questionText: payload?.questionText ?? 'auto-generated question',
+              category: payload?.category ?? 'otomatik',
+              questionNumber: payload?.questionNumber ?? 1,
+            },
+          });
+        }
+
+        // Eğer soru varsa cevabı güncelle veya oluştur
+        await prisma.answer.upsert({
+          where: { id: questionId },
+          update: {
+            faceScore: faceMetrics?.stressScore ?? null,
+            voiceScore: voiceMetrics?.speechRate ?? null,
+            reactionDelay: timestamps?.answerStart
+              ? calcReactionDelay(timestamps.questionStart, timestamps.answerStart)
+              : null,
+          },
+          create: {
+            id: questionId, // burada questionId'yi answer id olarak kullanıyoruz (prototip)
+            questionId,
+            answerText: null,
+            transcript: null,
+            confidence: null,
+            faceScore: faceMetrics?.stressScore ?? null,
+            voiceScore: voiceMetrics?.speechRate ?? null,
+            reactionDelay: timestamps?.answerStart
+              ? calcReactionDelay(timestamps.questionStart, timestamps.answerStart)
+              : null,
+          },
+        });
+      }
+
+      socket.emit('metrics:ack', {
+        ok: true,
+        questionId: payload?.questionId ?? null,
+        receivedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('metrics handler error:', error);
+      socket.emit('metrics:ack', {
+        ok: false,
+        error: 'failed_to_persist_metrics',
+        receivedAt: new Date().toISOString(),
+      });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -113,4 +167,12 @@ const PORT = Number(process.env.PORT ?? 4000);
 server.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
 });
+
+function calcReactionDelay(questionStart?: string, answerStart?: string) {
+  if (!questionStart || !answerStart) return null;
+  const qs = Date.parse(questionStart);
+  const as = Date.parse(answerStart);
+  if (Number.isNaN(qs) || Number.isNaN(as)) return null;
+  return (as - qs) / 1000; // seconds
+}
 
