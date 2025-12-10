@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { Camera } from '@mediapipe/camera_utils';
 import { FaceMesh, Results } from '@mediapipe/face_mesh';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useAudioAnalyzer } from '../hooks/useAudioAnalyzer';
 import './CameraView.css';
 
 interface CameraViewProps {
@@ -23,6 +24,7 @@ function CameraView({ stream }: CameraViewProps) {
   const { isRecording, startRecording, stopRecording } = useAudioRecorder(stream);
   const faceMeshRef = useRef<FaceMesh | null>(null);
   const cameraRef = useRef<Camera | null>(null);
+  const voiceMetrics = useAudioAnalyzer(stream);
 
   useEffect(() => {
     if (!videoRef.current || !canvasRef.current || !stream) return;
@@ -130,10 +132,16 @@ function CameraView({ stream }: CameraViewProps) {
         eyeBlinkRate: Math.random() * 5,
         headMovement: Math.random() * 10,
       },
-      voiceMetrics: {
-        pitchVariability: Math.random() * 10,
-        speechRate: Math.random() * 10,
-      },
+      voiceMetrics: voiceMetrics
+        ? {
+            rms: voiceMetrics.rms,
+            zcr: voiceMetrics.zcr,
+            pitchHz: voiceMetrics.pitchHz,
+          }
+        : {
+            pitchVariability: Math.random() * 10,
+            speechRate: Math.random() * 10,
+          },
       timestamps: {
         questionStart: new Date().toISOString(),
         answerStart: new Date().toISOString(),
@@ -219,6 +227,16 @@ function CameraView({ stream }: CameraViewProps) {
             <li>Stres Skoru: {faceMetrics.stressScore.toFixed(2)}</li>
             <li>Göz Açıklığı (blink düşük): {faceMetrics.eyeBlinkRate.toFixed(2)}</li>
             <li>Kafa Hareketi: {faceMetrics.headMovement.toFixed(2)}</li>
+          </ul>
+        </div>
+      )}
+      {voiceMetrics && (
+        <div className="metrics-panel">
+          <h3>Ses Metrikleri</h3>
+          <ul>
+            <li>RMS (enerji): {voiceMetrics.rms}</li>
+            <li>ZCR (saniye başına crossing): {voiceMetrics.zcr}</li>
+            <li>Pitch (Hz): {voiceMetrics.pitchHz ?? '—'}</li>
           </ul>
         </div>
       )}
