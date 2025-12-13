@@ -23,39 +23,81 @@ io.on('connection', (socket) => {
   socket.on('metrics', async (payload) => {
     console.log('incoming metrics payload', payload);
     try {
-      const { questionId, faceMetrics, voiceMetrics, timestamps } = payload ?? {};
+      const { questionId, sessionId, faceMetrics, voiceMetrics, timestamps } = payload ?? {};
 
-      if (questionId) {
-        // Soru yoksa basit bir placeholder oluştur (prototip amaçlı)
-        const existingQuestion = await prisma.question.findUnique({
-          where: { id: questionId },
+      // Session yoksa oluştur
+      let currentSessionId = sessionId;
+      if (!currentSessionId) {
+        const newSession = await prisma.session.create({
+          data: { status: 'active' },
         });
+        currentSessionId = newSession.id;
+      }
 
+      // QuestionId yoksa veya soru yoksa placeholder oluştur
+      let currentQuestionId = questionId;
+      if (!currentQuestionId) {
+        const questionCount = await prisma.question.count({
+          where: { sessionId: currentSessionId },
+        });
+        const newQuestion = await prisma.question.create({
+          data: {
+            sessionId: currentSessionId,
+            questionText: payload?.questionText ?? 'Otomatik oluşturulan soru',
+            category: payload?.category ?? 'otomatik',
+            questionNumber: questionCount + 1,
+          },
+        });
+        currentQuestionId = newQuestion.id;
+      } else {
+        // Soru var mı kontrol et
+        const existingQuestion = await prisma.question.findUnique({
+          where: { id: currentQuestionId },
+        });
         if (!existingQuestion) {
+          const questionCount = await prisma.question.count({
+            where: { sessionId: currentSessionId },
+          });
           await prisma.question.create({
             data: {
-              id: questionId,
-              sessionId: payload?.sessionId ?? `session-${Date.now()}`,
-              questionText: payload?.questionText ?? 'auto-generated question',
+              id: currentQuestionId,
+              sessionId: currentSessionId,
+              questionText: payload?.questionText ?? 'Otomatik oluşturulan soru',
               category: payload?.category ?? 'otomatik',
-              questionNumber: payload?.questionNumber ?? 1,
+              questionNumber: questionCount + 1,
             },
           });
         }
+      }
 
-        // Eğer soru varsa cevabı güncelle veya oluştur
-        await prisma.answer.upsert({
-          where: { id: questionId },
-          update: {
-            faceScore: faceMetrics?.stressScore ?? null,
-            voiceScore: voiceMetrics?.speechRate ?? null,
+      // Answer'ı questionId'ye göre bul veya oluştur
+      const existingAnswer = await prisma.answer.findFirst({
+        where: { questionId: currentQuestionId },
+      });
+
+      if (existingAnswer) {
+        // Mevcut answer'ı güncelle
+        await prisma.answer.update({
+          where: { id: existingAnswer.id },
+          data: {
+            faceScore: faceMetrics?.stressScore ?? existingAnswer.faceScore,
+            voiceScore: voiceMetrics?.speechRate ?? existingAnswer.voiceScore,
             reactionDelay: timestamps?.answerStart
               ? calcReactionDelay(timestamps.questionStart, timestamps.answerStart)
-              : null,
+              : existingAnswer.reactionDelay,
+            questionStartTime: timestamps?.questionStart
+              ? new Date(timestamps.questionStart)
+              : existingAnswer.questionStartTime,
+            answerStartTime: timestamps?.answerStart
+              ? new Date(timestamps.answerStart)
+              : existingAnswer.answerStartTime,
           },
-          create: {
-            id: questionId, // burada questionId'yi answer id olarak kullanıyoruz (prototip)
-            questionId,
+        });
+      } else {
+        // Yeni answer oluştur
+        await prisma.answer.create({
+          data: {
+            questionId: currentQuestionId,
             answerText: null,
             transcript: null,
             confidence: null,
@@ -64,13 +106,20 @@ io.on('connection', (socket) => {
             reactionDelay: timestamps?.answerStart
               ? calcReactionDelay(timestamps.questionStart, timestamps.answerStart)
               : null,
+            questionStartTime: timestamps?.questionStart
+              ? new Date(timestamps.questionStart)
+              : null,
+            answerStartTime: timestamps?.answerStart
+              ? new Date(timestamps.answerStart)
+              : null,
           },
         });
       }
 
       socket.emit('metrics:ack', {
         ok: true,
-        questionId: payload?.questionId ?? null,
+        sessionId: currentSessionId,
+        questionId: currentQuestionId,
         receivedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -160,6 +209,92 @@ app.post('/sessions/:sessionId/questions', async (req, res) => {
   } catch (error) {
     console.error('Question creation error:', error);
     res.status(500).json({ error: 'Soru oluşturulamadı' });
+  }
+});
+
+// Session detaylarını getir (sorular ve cevaplarla)
+app.get('/sessions/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: {
+        questions: {
+          include: {
+            answers: true,
+          },
+          orderBy: {
+            questionNumber: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session bulunamadı' });
+    }
+
+    res.json(session);
+  } catch (error) {
+    console.error('Session fetch error:', error);
+    res.status(500).json({ error: 'Session getirilemedi' });
+  }
+});
+
+// Session'ın metriklerini getir
+app.get('/sessions/:sessionId/metrics', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const answers = await prisma.answer.findMany({
+      where: {
+        question: {
+          sessionId,
+        },
+      },
+      include: {
+        question: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    // Ortalama skorları hesapla
+    const faceScores = answers.map((a) => a.faceScore).filter((s) => s !== null) as number[];
+    const voiceScores = answers.map((a) => a.voiceScore).filter((s) => s !== null) as number[];
+    const reactionDelays = answers
+      .map((a) => a.reactionDelay)
+      .filter((d) => d !== null) as number[];
+
+    const avgFaceScore =
+      faceScores.length > 0 ? faceScores.reduce((a, b) => a + b, 0) / faceScores.length : null;
+    const avgVoiceScore =
+      voiceScores.length > 0
+        ? voiceScores.reduce((a, b) => a + b, 0) / voiceScores.length
+        : null;
+    const avgReactionDelay =
+      reactionDelays.length > 0
+        ? reactionDelays.reduce((a, b) => a + b, 0) / reactionDelays.length
+        : null;
+
+    res.json({
+      sessionId,
+      totalAnswers: answers.length,
+      averageFaceScore: avgFaceScore,
+      averageVoiceScore: avgVoiceScore,
+      averageReactionDelay: avgReactionDelay,
+      answers: answers.map((a) => ({
+        questionId: a.questionId,
+        questionText: a.question.questionText,
+        faceScore: a.faceScore,
+        voiceScore: a.voiceScore,
+        reactionDelay: a.reactionDelay,
+        createdAt: a.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error('Metrics fetch error:', error);
+    res.status(500).json({ error: 'Metrikler getirilemedi' });
   }
 });
 

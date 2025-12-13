@@ -59,6 +59,17 @@
   background: rgba(239, 68, 68, 0.8);
 }
 
+.session-indicator {
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-top: 8px;
+  backdrop-filter: blur(10px);
+}
+
 .controls {
   display: flex;
   gap: 16px;
