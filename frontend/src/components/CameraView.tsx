@@ -15,6 +15,7 @@ function CameraView({ stream }: CameraViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [faceMetrics, setFaceMetrics] = useState<{
     eyeBlinkRate: number;
@@ -66,6 +67,23 @@ function CameraView({ stream }: CameraViewProps) {
   }, [stream]);
 
   useEffect(() => {
+    // Session oluştur
+    const createSession = async () => {
+      try {
+        const response = await fetch('http://localhost:4000/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const session = await response.json();
+        setSessionId(session.id);
+        console.log('Session oluşturuldu:', session.id);
+      } catch (error) {
+        console.error('Session oluşturma hatası:', error);
+      }
+    };
+
+    createSession();
+
     const newSocket = io('http://localhost:4000');
     
     newSocket.on('connect', () => {
@@ -80,6 +98,9 @@ function CameraView({ stream }: CameraViewProps) {
 
     newSocket.on('metrics:ack', (data) => {
       console.log('Backend onayı:', data);
+      if (data.sessionId && !sessionId) {
+        setSessionId(data.sessionId);
+      }
     });
 
     setSocket(newSocket);
@@ -126,22 +147,23 @@ function CameraView({ stream }: CameraViewProps) {
     if (!socket || !connected) return;
 
     const metrics = {
-      questionId: 1,
-      faceMetrics: faceMetrics ?? {
-        stressScore: Math.random() * 10,
-        eyeBlinkRate: Math.random() * 5,
-        headMovement: Math.random() * 10,
-      },
+      sessionId: sessionId,
+      questionId: null, // Backend otomatik oluşturacak
+      faceMetrics: faceMetrics
+        ? {
+            stressScore: faceMetrics.stressScore,
+            eyeBlinkRate: faceMetrics.eyeBlinkRate,
+            headMovement: faceMetrics.headMovement,
+          }
+        : null,
       voiceMetrics: voiceMetrics
         ? {
             rms: voiceMetrics.rms,
             zcr: voiceMetrics.zcr,
             pitchHz: voiceMetrics.pitchHz,
+            speechRate: voiceMetrics.pitchHz ? voiceMetrics.pitchHz / 100 : 0,
           }
-        : {
-            pitchVariability: Math.random() * 10,
-            speechRate: Math.random() * 10,
-          },
+        : null,
       timestamps: {
         questionStart: new Date().toISOString(),
         answerStart: new Date().toISOString(),
@@ -150,6 +172,19 @@ function CameraView({ stream }: CameraViewProps) {
 
     socket.emit('metrics', metrics);
   };
+
+  // Otomatik metrik gönderimi (her 5 saniyede bir)
+  useEffect(() => {
+    if (!connected || !socket || !sessionId) return;
+
+    const interval = setInterval(() => {
+      if (faceMetrics || voiceMetrics) {
+        sendMetrics();
+      }
+    }, 5000); // 5 saniye
+
+    return () => clearInterval(interval);
+  }, [connected, socket, sessionId, faceMetrics, voiceMetrics]);
 
   const handleRecordAndSend = async () => {
     if (isRecording) {
@@ -172,8 +207,8 @@ function CameraView({ stream }: CameraViewProps) {
             body: JSON.stringify({
               audioData: base64Data,
               audioFormat: 'webm',
-              sessionId: null, // TODO: Session ID'yi state'ten al
-              questionId: null, // TODO: Question ID'yi state'ten al
+              sessionId: sessionId,
+              questionId: null,
             }),
           });
 
@@ -206,6 +241,11 @@ function CameraView({ stream }: CameraViewProps) {
           <div className={`status-indicator ${connected ? 'connected' : 'disconnected'}`}>
             {connected ? '🟢 Bağlı' : '🔴 Bağlantı Yok'}
           </div>
+          {sessionId && (
+            <div className="session-indicator">
+              Session: {sessionId.substring(0, 8)}...
+            </div>
+          )}
         </div>
       </div>
       <div className="controls">
