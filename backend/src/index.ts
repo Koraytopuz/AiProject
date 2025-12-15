@@ -4,6 +4,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import prisma from './db';
+import { analyzeAnswerConsistency } from './nlp';
 
 const app = express();
 app.use(cors());
@@ -172,6 +173,50 @@ app.post('/stt', async (req, res) => {
   } catch (error) {
     console.error('STT error:', error);
     res.status(500).json({ error: 'STT işlemi başarısız' });
+  }
+});
+
+// NLP tutarlılık analizi endpoint'i
+app.post('/nlp/analyze', async (req, res) => {
+  try {
+    const { sessionId, questionId, questionText, answerText } = req.body ?? {};
+
+    if (!questionText || !answerText) {
+      return res.status(400).json({ error: 'questionText ve answerText zorunludur' });
+    }
+
+    const analysis = analyzeAnswerConsistency(questionText, answerText);
+
+    // Eğer questionId varsa ilgili answer kaydını güncelle
+    if (questionId) {
+      const existingAnswer = await prisma.answer.findFirst({
+        where: { questionId },
+      });
+
+      if (existingAnswer) {
+        await prisma.answer.update({
+          where: { id: existingAnswer.id },
+          data: {
+            nlpScore: analysis.nlpScore,
+            answerText,
+          },
+        });
+      } else {
+        // Gerekirse yeni answer oluştur
+        await prisma.answer.create({
+          data: {
+            questionId,
+            answerText,
+            nlpScore: analysis.nlpScore,
+          },
+        });
+      }
+    }
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('NLP analyze error:', error);
+    res.status(500).json({ error: 'NLP analizi başarısız' });
   }
 });
 
