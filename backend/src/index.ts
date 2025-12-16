@@ -5,6 +5,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import prisma from './db';
 import { analyzeAnswerConsistency } from './nlp';
+import { QUESTION_TEMPLATES } from './questions';
 
 const app = express();
 app.use(cors());
@@ -254,6 +255,45 @@ app.post('/sessions/:sessionId/questions', async (req, res) => {
   } catch (error) {
     console.error('Question creation error:', error);
     res.status(500).json({ error: 'Soru oluşturulamadı' });
+  }
+});
+
+// Bir session için 20 soruluk akışı başlat (template'lerden)
+app.post('/sessions/:sessionId/bootstrap-questions', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Zaten soru varsa tekrar oluşturma
+    const existingCount = await prisma.question.count({
+      where: { sessionId },
+    });
+
+    if (existingCount > 0) {
+      const existingQuestions = await prisma.question.findMany({
+        where: { sessionId },
+        orderBy: { questionNumber: 'asc' },
+      });
+      return res.json(existingQuestions);
+    }
+
+    // Template'lerden soru oluştur
+    const created = await Promise.all(
+      QUESTION_TEMPLATES.map((q) =>
+        prisma.question.create({
+          data: {
+            sessionId,
+            questionNumber: q.number,
+            questionText: q.text,
+            category: q.category,
+          },
+        }),
+      ),
+    );
+
+    res.json(created);
+  } catch (error) {
+    console.error('Bootstrap questions error:', error);
+    res.status(500).json({ error: 'Soru akışı başlatılamadı' });
   }
 });
 

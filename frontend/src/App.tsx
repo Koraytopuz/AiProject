@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import ConsentModal from './components/ConsentModal';
 import CameraView from './components/CameraView';
+import QuestionFlow from './components/QuestionFlow';
 import './App.css';
 
 function App() {
@@ -34,7 +35,10 @@ function App() {
       {!consentGiven ? (
         <ConsentModal onConsent={handleConsent} />
       ) : (
-        <CameraView stream={stream!} />
+        <>
+          <CameraView stream={stream!} />
+          <QuestionFlow />
+        </>
       )}
     </div>
   );
