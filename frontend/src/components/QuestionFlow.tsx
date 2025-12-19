@@ -14,9 +14,25 @@ interface NlpResult {
   uncertaintyScore: number;
   evasivenessScore: number;
   lengthScore: number;
+  emotionAnalysis?: {
+    consistencyScore: number;
+    emotionTone: 'positive' | 'negative' | 'neutral';
+    faceStressLevel: number;
+    textEmotionLevel: number;
+    mismatch: boolean;
+    details: {
+      positiveWords: number;
+      negativeWords: number;
+      stressMismatch: number;
+    };
+  };
 }
 
-function QuestionFlow() {
+interface QuestionFlowProps {
+  faceStressScore?: number | null;
+}
+
+function QuestionFlow({ faceStressScore }: QuestionFlowProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -67,6 +83,7 @@ function QuestionFlow() {
           questionId: currentQuestion.id,
           questionText: currentQuestion.questionText,
           answerText,
+          faceStressScore: faceStressScore ?? null,
         }),
       });
       const data = await res.json();
@@ -150,6 +167,34 @@ function QuestionFlow() {
                 <strong>{nlpResult.lengthScore.toFixed(2)}</strong>
               </div>
             </div>
+            {nlpResult.emotionAnalysis && (
+              <div className="emotion-analysis">
+                <h4>Duygu-İçerik Uyumu</h4>
+                <div className={`emotion-status ${nlpResult.emotionAnalysis.mismatch ? 'mismatch' : 'match'}`}>
+                  {nlpResult.emotionAnalysis.mismatch ? '⚠️ Uyumsuzluk Tespit Edildi' : '✅ Uyumlu'}
+                </div>
+                <div className="emotion-details">
+                  <div>
+                    <span>Yüz Stres Seviyesi</span>
+                    <strong>{nlpResult.emotionAnalysis.faceStressLevel.toFixed(2)} / 10</strong>
+                  </div>
+                  <div>
+                    <span>Metin Duygusal Tonu</span>
+                    <strong>
+                      {nlpResult.emotionAnalysis.emotionTone === 'positive'
+                        ? 'Pozitif'
+                        : nlpResult.emotionAnalysis.emotionTone === 'negative'
+                          ? 'Negatif'
+                          : 'Nötr'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Uyum Skoru</span>
+                    <strong>{nlpResult.emotionAnalysis.consistencyScore.toFixed(2)} / 10</strong>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -158,5 +203,6 @@ function QuestionFlow() {
 }
 
 export default QuestionFlow;
+
 
 
