@@ -4,6 +4,11 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import prisma from './db';
+import {
+  analyzeAnswerConsistency,
+  analyzeAnswerConsistencyAcrossAnswers,
+  analyzeEmotionContentConsistency,
+} from './nlp';
 import { analyzeAnswerConsistency } from './nlp';
 import { QUESTION_TEMPLATES } from './questions';
 
@@ -180,13 +185,19 @@ app.post('/stt', async (req, res) => {
 // NLP tutarlılık analizi endpoint'i
 app.post('/nlp/analyze', async (req, res) => {
   try {
-    const { sessionId, questionId, questionText, answerText } = req.body ?? {};
+    const { sessionId, questionId, questionText, answerText, faceStressScore } = req.body ?? {};
 
     if (!questionText || !answerText) {
       return res.status(400).json({ error: 'questionText ve answerText zorunludur' });
     }
 
     const analysis = analyzeAnswerConsistency(questionText, answerText);
+
+    // Duygu-içerik uyumu analizi (eğer faceStressScore varsa)
+    let emotionAnalysis = null;
+    if (faceStressScore !== undefined && faceStressScore !== null) {
+      emotionAnalysis = analyzeEmotionContentConsistency(answerText, faceStressScore);
+    }
 
     // Eğer questionId varsa ilgili answer kaydını güncelle
     if (questionId) {
@@ -214,10 +225,142 @@ app.post('/nlp/analyze', async (req, res) => {
       }
     }
 
-    res.json(analysis);
+    res.json({
+      ...analysis,
+      emotionAnalysis,
+    });
   } catch (error) {
     console.error('NLP analyze error:', error);
     res.status(500).json({ error: 'NLP analizi başarısız' });
+  }
+});
+
+// Cevap tutarlılık analizi (aynı soruya verilen farklı cevaplar)
+app.post('/nlp/consistency', async (req, res) => {
+  try {
+    const { questionId, sessionId } = req.body ?? {};
+
+    if (!questionId && !sessionId) {
+      return res.status(400).json({ error: 'questionId veya sessionId zorunludur' });
+    }
+
+    let answers: { questionText: string; answerText: string | null }[] = [];
+
+    if (questionId) {
+      // Belirli bir soruya verilen tüm cevapları getir
+      const question = await prisma.question.findUnique({
+        where: { id: questionId },
+        include: { answers: true },
+      });
+
+      if (!question) {
+        return res.status(404).json({ error: 'Soru bulunamadı' });
+      }
+
+      answers = question.answers
+        .filter((a) => a.answerText)
+        .map((a) => ({
+          questionText: question.questionText,
+          answerText: a.answerText!,
+        }));
+    } else if (sessionId) {
+      // Session'daki tüm soru-cevap çiftlerini getir
+      const session = await prisma.session.findUnique({
+        where: { id: sessionId },
+        include: {
+          questions: {
+            include: { answers: true },
+          },
+        },
+      });
+
+      if (!session) {
+        return res.status(404).json({ error: 'Session bulunamadı' });
+      }
+
+      answers = session.questions.flatMap((q) =>
+        q.answers
+          .filter((a) => a.answerText)
+          .map((a) => ({
+            questionText: q.questionText,
+            answerText: a.answerText!,
+          })),
+      );
+    }
+
+    if (answers.length < 2) {
+      return res.json({
+        consistencyScore: 10,
+        similarity: 1,
+        contradictionCount: 0,
+        details: {
+          answerCount: answers.length,
+          avgLengthDiff: 0,
+          semanticOverlap: 1,
+        },
+        message: 'Karşılaştırma için en az 2 cevap gerekli',
+      });
+    }
+
+    // Aynı soruya verilen cevapları grupla
+    const questionGroups = new Map<string, string[]>();
+    answers.forEach((a) => {
+      const key = a.questionText;
+      if (!questionGroups.has(key)) {
+        questionGroups.set(key, []);
+      }
+      questionGroups.get(key)!.push(a.answerText);
+    });
+
+    // Her soru için tutarlılık analizi yap
+    const results: Array<{
+      questionText: string;
+      analysis: ReturnType<typeof analyzeAnswerConsistencyAcrossAnswers>;
+    }> = [];
+
+    questionGroups.forEach((answerTexts, questionText) => {
+      if (answerTexts.length >= 2) {
+        results.push({
+          questionText,
+          analysis: analyzeAnswerConsistencyAcrossAnswers(questionText, answerTexts),
+        });
+      }
+    });
+
+    // Genel ortalama
+    const avgConsistency =
+      results.length > 0
+        ? results.reduce((sum, r) => sum + r.analysis.consistencyScore, 0) / results.length
+        : 10;
+
+    res.json({
+      overallConsistencyScore: Number(avgConsistency.toFixed(2)),
+      questionAnalyses: results,
+      totalQuestions: results.length,
+    });
+  } catch (error) {
+    console.error('Consistency analysis error:', error);
+    res.status(500).json({ error: 'Tutarlılık analizi başarısız' });
+  }
+});
+
+// Duygu-içerik uyumu analizi
+app.post('/nlp/emotion-consistency', async (req, res) => {
+  try {
+    const { answerText, faceStressScore } = req.body ?? {};
+
+    if (!answerText || faceStressScore === undefined || faceStressScore === null) {
+      return res
+        .status(400)
+        .json({ error: 'answerText ve faceStressScore (0-10) zorunludur' });
+    }
+
+    const analysis = analyzeEmotionContentConsistency(answerText, faceStressScore);
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('Emotion consistency analysis error:', error);
+    res.status(500).json({ error: 'Duygu-içerik analizi başarısız' });
   }
 });
 

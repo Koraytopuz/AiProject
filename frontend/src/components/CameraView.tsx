@@ -8,9 +8,10 @@ import './CameraView.css';
 
 interface CameraViewProps {
   stream: MediaStream;
+  onFaceStressChange?: (score: number | null) => void;
 }
 
-function CameraView({ stream }: CameraViewProps) {
+function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -133,11 +134,15 @@ function CameraView({ stream }: CameraViewProps) {
         Math.max(0, (1 - eyeBlinkRate) * 6 + headMovement * 4),
       );
 
-      setFaceMetrics({
+      const newMetrics = {
         eyeBlinkRate: Number(eyeBlinkRate.toFixed(2)),
         headMovement: Number(headMovement.toFixed(2)),
         stressScore: Number(stressScore.toFixed(2)),
-      });
+      };
+      setFaceMetrics(newMetrics);
+      if (onFaceStressChange) {
+        onFaceStressChange(newMetrics.stressScore);
+      }
     }
 
     ctx.restore();

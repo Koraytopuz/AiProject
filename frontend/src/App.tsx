@@ -7,6 +7,7 @@ import './App.css';
 function App() {
   const [consentGiven, setConsentGiven] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [faceStressScore, setFaceStressScore] = useState<number | null>(null);
 
   useEffect(() => {
     return () => {
@@ -36,8 +37,8 @@ function App() {
         <ConsentModal onConsent={handleConsent} />
       ) : (
         <>
-          <CameraView stream={stream!} />
-          <QuestionFlow />
+          <CameraView stream={stream!} onFaceStressChange={setFaceStressScore} />
+          <QuestionFlow faceStressScore={faceStressScore} />
         </>
       )}
     </div>
