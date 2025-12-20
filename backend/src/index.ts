@@ -9,6 +9,11 @@ import {
   analyzeAnswerConsistencyAcrossAnswers,
   analyzeEmotionContentConsistency,
 } from './nlp';
+import {
+  calculateAnswerScore,
+  calculateSessionScore,
+  type SessionScoreResult,
+} from './scoring';
 import { analyzeAnswerConsistency } from './nlp';
 import { QUESTION_TEMPLATES } from './questions';
 
@@ -523,6 +528,67 @@ app.get('/sessions/:sessionId/metrics', async (req, res) => {
   } catch (error) {
     console.error('Metrics fetch error:', error);
     res.status(500).json({ error: 'Metrikler getirilemedi' });
+  }
+});
+
+// Session için skor hesaplama endpoint'i
+app.post('/sessions/:sessionId/calculate-score', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Session'ı kontrol et
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: {
+        questions: {
+          include: {
+            answers: true,
+          },
+          orderBy: {
+            questionNumber: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session bulunamadı' });
+    }
+
+    // Her answer için skor hesapla
+    const answerScores = session.questions.flatMap((question) =>
+      question.answers.map((answer) =>
+        calculateAnswerScore(
+          answer.id,
+          answer.questionId,
+          question.questionNumber,
+          question.questionText,
+          question.category,
+          answer.faceScore,
+          answer.voiceScore,
+          answer.nlpScore,
+          answer.reactionDelay,
+        ),
+      ),
+    );
+
+    // Session skorunu hesapla
+    const sessionScore = calculateSessionScore(answerScores);
+    sessionScore.sessionId = sessionId;
+
+    // Final skoru Session'a kaydet
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        finalScore: sessionScore.finalScore,
+        status: 'completed',
+      },
+    });
+
+    res.json(sessionScore);
+  } catch (error) {
+    console.error('Score calculation error:', error);
+    res.status(500).json({ error: 'Skor hesaplanamadı' });
   }
 });
 

@@ -48,13 +48,32 @@ export function analyzeAnswerConsistency(question: string, answer: string): NlpA
   const uncertaintyScore = Math.min(10, uncertaintyCount * 3); // 0,3,6,9,10
   const evasivenessScore = Math.min(10, evasiveCount * 4);
 
-  // Çok kaba semantik yakınlık (ortak kelime oranı)
+  // Semantik yakınlık analizi
   const questionWords = q.split(/\s+/).filter(Boolean);
-  const overlap = questionWords.filter((w) => a.includes(w));
-  const overlapRatio = questionWords.length
-    ? overlap.length / Math.min(questionWords.length, 10)
+  // answerWords zaten yukarıda tanımlı (36. satır)
+  
+  // Stop words (Türkçe)
+  const stopWords = new Set(['nasıl', 'ne', 'kim', 'nerede', 'neden', 'hangi', 'kaç', 'bugün', 'dün', 'yarın', 'şimdi', 'bu', 'şu', 'o', 'bir', 've', 'ile', 'için', 'gibi', 'kadar']);
+  
+  // Stop words'leri filtrele
+  const filteredQuestionWords = questionWords.filter((w) => !stopWords.has(w) && w.length > 2);
+  const filteredAnswerWords = answerWords.filter((w) => !stopWords.has(w) && w.length > 2);
+  
+  // Ortak kelime analizi
+  const overlap = filteredQuestionWords.filter((w) => filteredAnswerWords.includes(w));
+  const overlapRatio = filteredQuestionWords.length > 0
+    ? overlap.length / Math.min(filteredQuestionWords.length, 5)
     : 0;
-  const semanticScore = Math.max(0, Math.min(10, overlapRatio * 10));
+  
+  // Baseline skor: Eğer cevap varsa ve belirsizlik/kaçamaklık yoksa minimum skor ver
+  let baselineScore = 0;
+  if (answerLength >= 3 && uncertaintyCount === 0 && evasiveCount === 0) {
+    baselineScore = 3; // Minimum semantic skor
+  }
+  
+  // Ortak kelime skoru + baseline
+  const rawSemanticScore = Math.max(0, Math.min(10, overlapRatio * 7 + baselineScore));
+  const semanticScore = Number(rawSemanticScore.toFixed(2));
 
   // Toplam NLP skoru: yüksek semantic + makul uzunluk, düşük belirsizlik/kaçamaklık
   const rawScore =
