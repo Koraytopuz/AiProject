@@ -30,9 +30,10 @@ interface NlpResult {
 
 interface QuestionFlowProps {
   faceStressScore?: number | null;
+  onComplete?: (sessionId: string) => void;
 }
 
-function QuestionFlow({ faceStressScore }: QuestionFlowProps) {
+function QuestionFlow({ faceStressScore, onComplete }: QuestionFlowProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -102,7 +103,15 @@ function QuestionFlow({ faceStressScore }: QuestionFlowProps) {
   const handleNext = () => {
     setNlpResult(null);
     setAnswerText('');
-    setCurrentIndex((prev) => Math.min(prev + 1, questions.length - 1));
+    const nextIndex = currentIndex + 1;
+    if (nextIndex >= questions.length) {
+      // Tüm sorular tamamlandı
+      if (sessionId && onComplete) {
+        onComplete(sessionId);
+      }
+    } else {
+      setCurrentIndex(nextIndex);
+    }
   };
 
   if (!currentQuestion) {
@@ -134,12 +143,8 @@ function QuestionFlow({ faceStressScore }: QuestionFlowProps) {
           <button onClick={handleAnalyze} disabled={loading || !answerText.trim()}>
             {loading ? 'Analiz ediliyor...' : 'Cevabı Analiz Et'}
           </button>
-          <button
-            onClick={handleNext}
-            disabled={currentIndex >= questions.length - 1}
-            className="secondary"
-          >
-            Sonraki Soru
+          <button onClick={handleNext} className="secondary">
+            {currentIndex >= questions.length - 1 ? 'Sonuçları Gör' : 'Sonraki Soru'}
           </button>
         </div>
         {nlpResult && (
