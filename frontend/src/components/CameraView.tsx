@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Camera } from '@mediapipe/camera_utils';
 import { FaceMesh, Results } from '@mediapipe/face_mesh';
@@ -158,8 +158,25 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
     ctx.restore();
   };
 
-  const sendMetrics = () => {
-    if (!socket || !connected) return;
+  const sendMetrics = useCallback(() => {
+    console.log('=== sendMetrics FONKSİYONU ÇAĞRILDI ===');
+    console.log('Durum kontrolü:', { 
+      socket: !!socket, 
+      connected, 
+      sessionId, 
+      faceMetrics: !!faceMetrics, 
+      voiceMetrics: !!voiceMetrics 
+    });
+    
+    if (!socket) {
+      console.error('Socket null! WebSocket bağlantısı kurulmamış.');
+      return;
+    }
+
+    if (!connected) {
+      console.warn('WebSocket bağlantısı aktif değil, yine de deniyoruz...');
+      // Bağlantı yoksa bile deneyelim, belki bağlanır
+    }
 
     const metrics = {
       sessionId: sessionId,
@@ -171,7 +188,7 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
             headMovement: faceMetrics.headMovement,
           }
         : null,
-      voiceMetrics: voiceMetrics
+      voiceMetrics: voiceMetrics && voiceMetrics.rms !== undefined
         ? {
             rms: voiceMetrics.rms,
             zcr: voiceMetrics.zcr,
@@ -185,27 +202,38 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
       },
     };
 
-    socket.emit('metrics', metrics);
-  };
+    console.log('Metrikler gönderiliyor:', metrics);
+    try {
+      socket.emit('metrics', metrics);
+      console.log('Metrikler başarıyla gönderildi');
+    } catch (error) {
+      console.error('Metrik gönderme hatası:', error);
+      alert('Metrikler gönderilirken bir hata oluştu.');
+    }
+  }, [socket, connected, sessionId, faceMetrics, voiceMetrics]);
 
   // Otomatik metrik gönderimi (her 5 saniyede bir)
   useEffect(() => {
     if (!connected || !socket || !sessionId) return;
 
     const interval = setInterval(() => {
-      if (faceMetrics || voiceMetrics) {
+      if (faceMetrics || (voiceMetrics && voiceMetrics.rms !== undefined)) {
         sendMetrics();
       }
     }, 5000); // 5 saniye
 
     return () => clearInterval(interval);
-  }, [connected, socket, sessionId, faceMetrics, voiceMetrics]);
+  }, [connected, socket, sessionId, faceMetrics, voiceMetrics, sendMetrics]);
 
   const handleRecordAndSend = async () => {
     if (isRecording) {
       // Kaydı durdur ve STT'ye gönder
+      console.log('Kayıt durduruluyor ve STT\'ye gönderiliyor...');
       const blob = await stopRecording();
-      if (!blob) return;
+      if (!blob) {
+        console.warn('Kayıt blob\'u alınamadı');
+        return;
+      }
 
       // Audio'yu base64'e çevir
       const reader = new FileReader();
@@ -214,6 +242,7 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
         const base64Data = base64Audio.split(',')[1]; // data:audio/webm;base64, kısmını çıkar
 
         try {
+          console.log('STT endpoint\'ine gönderiliyor...');
           const response = await fetch('http://localhost:4000/stt', {
             method: 'POST',
             headers: {
@@ -227,19 +256,42 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
             }),
           });
 
+          if (!response.ok) {
+            throw new Error(`STT endpoint hatası: ${response.status}`);
+          }
+
           const data = await response.json();
           setTranscript(data.transcript);
           console.log('STT Response:', data);
         } catch (error) {
           console.error('STT gönderme hatası:', error);
+          alert('Ses kaydı gönderilirken bir hata oluştu. Lütfen tekrar deneyin.');
         }
       };
       reader.readAsDataURL(blob);
     } else {
       // Kaydı başlat
-      startRecording();
+      console.log('Ses kaydı başlatılıyor...');
+      try {
+        startRecording();
+      } catch (error) {
+        console.error('Kayıt başlatma hatası:', error);
+        alert('Ses kaydı başlatılamadı. Lütfen mikrofon iznini kontrol edin.');
+      }
     }
   };
+
+  // Debug: Component render olduğunda log
+  useEffect(() => {
+    console.log('CameraView render edildi', { 
+      connected, 
+      socket: !!socket, 
+      sessionId, 
+      faceMetrics: !!faceMetrics, 
+      voiceMetrics: !!voiceMetrics,
+      isRecording 
+    });
+  });
 
   return (
     <div className="camera-view">
@@ -263,38 +315,113 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
           )}
         </div>
       </div>
-      <div className="controls">
-        <button onClick={sendMetrics} disabled={!connected}>
+      <div className="controls" style={{ 
+        zIndex: 9999, 
+        position: 'relative',
+        display: 'flex',
+        gap: '16px',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        marginTop: '20px',
+        padding: '20px',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderRadius: '8px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+        width: '100%',
+        maxWidth: '800px'
+      }}>
+        <button 
+          type="button"
+          id="test-metrics-button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('=== Test Metrikleri Gönder butonuna tıklandı ===');
+            console.log('Durum:', { connected, socket: !!socket, sessionId, faceMetrics: !!faceMetrics, voiceMetrics: !!voiceMetrics });
+            sendMetrics();
+          }} 
+          title="Metrikleri gönder"
+          style={{ 
+            pointerEvents: 'auto !important',
+            cursor: 'pointer',
+            position: 'relative',
+            zIndex: 10001,
+            opacity: 1,
+            padding: '12px 24px',
+            backgroundColor: 'white',
+            color: '#667eea',
+            border: '2px solid #667eea',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: 600,
+            minWidth: '200px',
+            userSelect: 'none'
+          }}
+        >
           Test Metrikleri Gönder
         </button>
         <button
-          onClick={handleRecordAndSend}
-          disabled={!connected}
+          type="button"
+          id="record-button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('=== Ses Kaydı butonuna tıklandı ===');
+            console.log('Durum:', { isRecording, connected, socket: !!socket, sessionId });
+            handleRecordAndSend().catch((error) => {
+              console.error('handleRecordAndSend hatası:', error);
+            });
+          }}
           className={isRecording ? 'recording' : ''}
+          title={isRecording ? 'Kaydı durdur ve gönder' : 'Ses kaydını başlat'}
+          style={{ 
+            pointerEvents: 'auto !important',
+            cursor: 'pointer',
+            position: 'relative',
+            zIndex: 10001,
+            opacity: 1,
+            padding: '12px 24px',
+            backgroundColor: isRecording ? '#ef4444' : 'white',
+            color: isRecording ? 'white' : '#667eea',
+            border: `2px solid ${isRecording ? '#ef4444' : '#667eea'}`,
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: 600,
+            minWidth: '200px',
+            userSelect: 'none'
+          }}
         >
           {isRecording ? '⏹️ Kaydı Durdur ve Gönder' : '🎤 Ses Kaydı Başlat'}
         </button>
       </div>
-      {faceMetrics && (
-        <div className="metrics-panel">
-          <h3>Yüz Metrikleri</h3>
+      <div className="metrics-panel">
+        <h3>Yüz Metrikleri</h3>
+        {faceMetrics ? (
           <ul>
             <li>Stres Skoru: {faceMetrics.stressScore.toFixed(2)}</li>
             <li>Göz Açıklığı (blink düşük): {faceMetrics.eyeBlinkRate.toFixed(2)}</li>
             <li>Kafa Hareketi: {faceMetrics.headMovement.toFixed(2)}</li>
           </ul>
-        </div>
-      )}
-      {voiceMetrics && (
-        <div className="metrics-panel">
-          <h3>Ses Metrikleri</h3>
+        ) : (
+          <p style={{ color: '#666', fontStyle: 'italic' }}>
+            Yüz tespit ediliyor... Lütfen kameraya bakın.
+          </p>
+        )}
+      </div>
+      <div className="metrics-panel">
+        <h3>Ses Metrikleri</h3>
+        {voiceMetrics && voiceMetrics.rms !== undefined ? (
           <ul>
-            <li>RMS (enerji): {voiceMetrics.rms}</li>
-            <li>ZCR (saniye başına crossing): {voiceMetrics.zcr}</li>
-            <li>Pitch (Hz): {voiceMetrics.pitchHz ?? '—'}</li>
+            <li>RMS (enerji): {voiceMetrics.rms.toFixed(4)}</li>
+            <li>ZCR (saniye başına crossing): {voiceMetrics.zcr.toFixed(2)}</li>
+            <li>Pitch (Hz): {voiceMetrics.pitchHz ? voiceMetrics.pitchHz.toFixed(2) : '—'}</li>
           </ul>
-        </div>
-      )}
+        ) : (
+          <p style={{ color: '#666', fontStyle: 'italic' }}>
+            Ses analizi başlatılıyor...
+          </p>
+        )}
+      </div>
       {transcript && (
         <div className="transcript-box">
           <h3>Transkript:</h3>

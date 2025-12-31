@@ -193,6 +193,8 @@ export function analyzeAnswerConsistencyAcrossAnswers(
     for (let j = i + 1; j < normalizedAnswers.length; j++) {
       const a1 = normalizedAnswers[i];
       const a2 = normalizedAnswers[j];
+      if (!a1 || !a2) continue;
+      
       const hasPos1 = POSITIVE_WORDS.some((w) => a1.includes(w));
       const hasNeg1 = NEGATIVE_WORDS.some((w) => a1.includes(w));
       const hasPos2 = POSITIVE_WORDS.some((w) => a2.includes(w));

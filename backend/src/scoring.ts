@@ -120,30 +120,21 @@ export function calculateAnswerScore(
   let nlpWeight = 0.20;
   let reactionWeight = 0.10;
 
-  // Eksik metrikler varsa ağırlıkları yeniden dağıt
-  if (!hasFaceScore) {
-    const total = voiceWeight + nlpWeight + reactionWeight;
-    voiceWeight = (voiceWeight / total) * (1 - faceWeight);
-    nlpWeight = (nlpWeight / total) * (1 - faceWeight);
-    reactionWeight = (reactionWeight / total) * (1 - faceWeight);
-  }
-  if (!hasVoiceScore) {
-    const total = faceWeight + nlpWeight + reactionWeight;
-    faceWeight = (faceWeight / total) * (1 - voiceWeight);
-    nlpWeight = (nlpWeight / total) * (1 - voiceWeight);
-    reactionWeight = (reactionWeight / total) * (1 - voiceWeight);
-  }
-  if (!hasNlpScore) {
-    const total = faceWeight + voiceWeight + reactionWeight;
-    faceWeight = (faceWeight / total) * (1 - nlpWeight);
-    voiceWeight = (voiceWeight / total) * (1 - nlpWeight);
-    reactionWeight = (reactionWeight / total) * (1 - nlpWeight);
-  }
-  if (!hasReactionDelayScore) {
-    const total = faceWeight + voiceWeight + nlpWeight;
-    faceWeight = (faceWeight / total) * (1 - reactionWeight);
-    voiceWeight = (voiceWeight / total) * (1 - reactionWeight);
-    nlpWeight = (nlpWeight / total) * (1 - reactionWeight);
+  // Eksik metrikler varsa ağırlıkları yeniden dağıt (toplam 1 olacak şekilde)
+  const availableWeights: number[] = [];
+  if (hasFaceScore) availableWeights.push(faceWeight);
+  if (hasVoiceScore) availableWeights.push(voiceWeight);
+  if (hasNlpScore) availableWeights.push(nlpWeight);
+  if (hasReactionDelayScore) availableWeights.push(reactionWeight);
+
+  const totalAvailableWeight = availableWeights.reduce((sum, w) => sum + w, 0);
+
+  if (totalAvailableWeight > 0) {
+    // Mevcut ağırlıkları normalize et (toplam 1 olacak şekilde)
+    if (hasFaceScore) faceWeight = faceWeight / totalAvailableWeight;
+    if (hasVoiceScore) voiceWeight = voiceWeight / totalAvailableWeight;
+    if (hasNlpScore) nlpWeight = nlpWeight / totalAvailableWeight;
+    if (hasReactionDelayScore) reactionWeight = reactionWeight / totalAvailableWeight;
   }
 
   // Skor hesaplama (0-10 arası skorları 0-100'e çevir)
@@ -222,15 +213,20 @@ export function calculateSessionScore(answerScores: AnswerScore[]): SessionScore
       if (!categoryBreakdown[score.category]) {
         categoryBreakdown[score.category] = { count: 0, averageScore: 0 };
       }
-      categoryBreakdown[score.category].count++;
-      categoryBreakdown[score.category].averageScore += score.individualScore;
+      const categoryData = categoryBreakdown[score.category];
+      if (categoryData) {
+        categoryData.count++;
+        categoryData.averageScore += score.individualScore;
+      }
     }
   });
 
   // Kategori ortalamalarını hesapla
   Object.keys(categoryBreakdown).forEach((category) => {
     const data = categoryBreakdown[category];
-    data.averageScore = Number((data.averageScore / data.count).toFixed(2));
+    if (data && data.count > 0) {
+      data.averageScore = Number((data.averageScore / data.count).toFixed(2));
+    }
   });
 
   return {

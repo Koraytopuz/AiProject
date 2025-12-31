@@ -14,8 +14,16 @@ import {
   calculateSessionScore,
   type SessionScoreResult,
 } from './scoring';
-import { analyzeAnswerConsistency } from './nlp';
 import { QUESTION_TEMPLATES } from './questions';
+
+// Reaction delay hesaplama fonksiyonu
+function calcReactionDelay(questionStart?: string, answerStart?: string) {
+  if (!questionStart || !answerStart) return null;
+  const qs = Date.parse(questionStart);
+  const as = Date.parse(answerStart);
+  if (Number.isNaN(qs) || Number.isNaN(as)) return null;
+  return (as - qs) / 1000; // seconds
+}
 
 const app = express();
 app.use(cors());
@@ -314,7 +322,10 @@ app.post('/nlp/consistency', async (req, res) => {
       if (!questionGroups.has(key)) {
         questionGroups.set(key, []);
       }
-      questionGroups.get(key)!.push(a.answerText);
+      const group = questionGroups.get(key);
+      if (group && a.answerText) {
+        group.push(a.answerText);
+      }
     });
 
     // Her soru için tutarlılık analizi yap
@@ -596,12 +607,4 @@ const PORT = Number(process.env.PORT ?? 4000);
 server.listen(PORT, () => {
   console.log(`Backend listening on http://localhost:${PORT}`);
 });
-
-function calcReactionDelay(questionStart?: string, answerStart?: string) {
-  if (!questionStart || !answerStart) return null;
-  const qs = Date.parse(questionStart);
-  const as = Date.parse(answerStart);
-  if (Number.isNaN(qs) || Number.isNaN(as)) return null;
-  return (as - qs) / 1000; // seconds
-}
 
