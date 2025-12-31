@@ -340,13 +340,85 @@ function ResultsView({ sessionId, onBack }: ResultsViewProps) {
         </div>
       </div>
 
+      {/* Skor Açıklaması */}
+      <div className="score-explanation">
+        <h3>📖 Skor Nasıl Hesaplanır?</h3>
+        <div className="explanation-content">
+          <p>
+            <strong>Davranışsal Tutarsızlık Skoru (0-100):</strong> Bu skor, yüz ifadeleri, ses tonu,
+            cevap tutarlılığı ve tepki sürelerine göre hesaplanır. Düşük skor daha tutarlı davranış,
+            yüksek skor ise daha fazla tutarsızlık göstergesidir.
+          </p>
+          <div className="explanation-grid">
+            <div className="explanation-item">
+              <strong>Yüz Analizi (0-10):</strong>
+              <ul>
+                <li>Göz kırpma oranı</li>
+                <li>Kafa hareketleri</li>
+                <li>Mikro ifadeler (kaş çatma, dudak ısırma)</li>
+                <li>Göz teması kaçınma</li>
+              </ul>
+            </div>
+            <div className="explanation-item">
+              <strong>Ses Analizi (0-10):</strong>
+              <ul>
+                <li>Konuşma hızı değişkenliği</li>
+                <li>Ses titremesi (jitter, shimmer)</li>
+                <li>Pitch değişkenliği</li>
+                <li>Nefes alma sıklığı</li>
+              </ul>
+            </div>
+            <div className="explanation-item">
+              <strong>NLP Skoru (0-10):</strong>
+              <ul>
+                <li>Semantik tutarlılık</li>
+                <li>Belirsizlik ifadeleri</li>
+                <li>Kaçamaklık tespiti</li>
+                <li>Cevap uzunluğu analizi</li>
+              </ul>
+            </div>
+            <div className="explanation-item">
+              <strong>Reaction Delay:</strong>
+              <ul>
+                <li>Soru sorulduktan sonra cevap başlama süresi</li>
+                <li>Uzun gecikmeler tutarsızlık göstergesi olabilir</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Etik Uyarı */}
       <div className="ethical-warning">
-        <h4>⚠️ Önemli Uyarı</h4>
-        <p>
-          Bu uygulama bilimsel yalan tespiti yapmaz. Sadece davranışsal tutarsızlık analizi
-          yapmaktadır. Sonuçlar kesin değildir ve sadece referans amaçlıdır.
-        </p>
+        <h4>⚠️ Önemli Uyarı ve Etik Bildirim</h4>
+        <div className="warning-content">
+          <p>
+            <strong>Bu uygulama bilimsel yalan tespiti yapmaz.</strong> Sadece davranışsal
+            tutarsızlık analizi gerçekleştirir.
+          </p>
+          <ul>
+            <li>
+              <strong>Sonuçlar kesin değildir:</strong> Skorlar sadece referans amaçlıdır ve
+              gerçek durumu yansıtmayabilir.
+            </li>
+            <li>
+              <strong>Çevresel faktörler:</strong> Gürültü, ışık, teknik sorunlar sonuçları
+              etkileyebilir.
+            </li>
+            <li>
+              <strong>Kişisel farklılıklar:</strong> Her bireyin doğal davranış kalıpları
+              farklıdır.
+            </li>
+            <li>
+              <strong>Veri gizliliği:</strong> Tüm veriler yerel olarak saklanır ve üçüncü
+              taraflarla paylaşılmaz.
+            </li>
+            <li>
+              <strong>Kullanım amacı:</strong> Bu uygulama eğitim ve araştırma amaçlıdır. Ciddi
+              kararlar için kullanılmamalıdır.
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   );

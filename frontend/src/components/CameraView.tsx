@@ -85,15 +85,25 @@ function CameraView({ stream, onFaceStressChange }: CameraViewProps) {
 
     createSession();
 
-    const newSocket = io('http://localhost:4000');
+    const newSocket = io('http://localhost:4000', {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      timeout: 5000,
+    });
     
     newSocket.on('connect', () => {
       console.log('WebSocket bağlantısı kuruldu');
       setConnected(true);
     });
 
-    newSocket.on('disconnect', () => {
-      console.log('WebSocket bağlantısı kesildi');
+    newSocket.on('disconnect', (reason) => {
+      console.log('WebSocket bağlantısı kesildi:', reason);
+      setConnected(false);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('WebSocket bağlantı hatası:', error);
       setConnected(false);
     });
 

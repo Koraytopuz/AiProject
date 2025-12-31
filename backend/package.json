@@ -13,11 +13,11 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^7.0.1",
+    "@prisma/client": "^6.19.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "prisma": "^7.0.1",
+    "prisma": "^6.19.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
